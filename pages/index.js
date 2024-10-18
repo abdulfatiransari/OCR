@@ -1,115 +1,117 @@
-import Image from "next/image";
-import localFont from "next/font/local";
+import { useState } from "react";
+import Tesseract from "tesseract.js";
+import { ethers } from "ethers";
+import { PDFDocument } from "pdf-lib";
+import ReceiptContract from "../contract/ABI.json";
 
-const geistSans = localFont({
-  src: "./fonts/GeistVF.woff",
-  variable: "--font-geist-sans",
-  weight: "100 900",
-});
-const geistMono = localFont({
-  src: "./fonts/GeistMonoVF.woff",
-  variable: "--font-geist-mono",
-  weight: "100 900",
-});
+const contractAddress = "YOUR_CONTRACT_ADDRESS";
 
 export default function Home() {
-  return (
-    <div
-      className={`${geistSans.variable} ${geistMono.variable} grid grid-rows-[20px_1fr_20px] items-center justify-items-center min-h-screen p-8 pb-20 gap-16 sm:p-20 font-[family-name:var(--font-geist-sans)]`}
-    >
-      <main className="flex flex-col gap-8 row-start-2 items-center sm:items-start">
-        <Image
-          className="dark:invert"
-          src="https://nextjs.org/icons/next.svg"
-          alt="Next.js logo"
-          width={180}
-          height={38}
-          priority
-        />
-        <ol className="list-inside list-decimal text-sm text-center sm:text-left font-[family-name:var(--font-geist-mono)]">
-          <li className="mb-2">
-            Get started by editing{" "}
-            <code className="bg-black/[.05] dark:bg-white/[.06] px-1 py-0.5 rounded font-semibold">
-              pages/index.js
-            </code>
-            .
-          </li>
-          <li>Save and see your changes instantly.</li>
-        </ol>
+  const [file, setFile] = useState(null);
+  const [data, setData] = useState(null);
+  console.log("🚀 ~ Home ~ data:", data)
 
-        <div className="flex gap-4 items-center flex-col sm:flex-row">
-          <a
-            className="rounded-full border border-solid border-transparent transition-colors flex items-center justify-center bg-foreground text-background gap-2 hover:bg-[#383838] dark:hover:bg-[#ccc] text-sm sm:text-base h-10 sm:h-12 px-4 sm:px-5"
-            href="https://vercel.com/new?utm_source=create-next-app&utm_medium=default-template-tw&utm_campaign=create-next-app"
-            target="_blank"
-            rel="noopener noreferrer"
-          >
-            <Image
-              className="dark:invert"
-              src="https://nextjs.org/icons/vercel.svg"
-              alt="Vercel logomark"
-              width={20}
-              height={20}
-            />
-            Deploy now
-          </a>
-          <a
-            className="rounded-full border border-solid border-black/[.08] dark:border-white/[.145] transition-colors flex items-center justify-center hover:bg-[#f2f2f2] dark:hover:bg-[#1a1a1a] hover:border-transparent text-sm sm:text-base h-10 sm:h-12 px-4 sm:px-5 sm:min-w-44"
-            href="https://nextjs.org/docs?utm_source=create-next-app&utm_medium=default-template-tw&utm_campaign=create-next-app"
-            target="_blank"
-            rel="noopener noreferrer"
-          >
-            Read our docs
-          </a>
+  const handleFileChange = (e) => {
+    setFile(e.target.files[0]);
+  };
+
+  const handleScan = async () => {
+    if (!file) return;
+
+    let text = '';
+
+    if (file.type === 'application/pdf') {
+      // Convert PDF to images
+      text = await extractTextFromPDF(file);
+      console.log("🚀 ~ handleScan ~ text:", text)
+    } else {
+      // Perform OCR directly on image
+      const result = await Tesseract.recognize(file, 'eng');
+      console.log("🚀 ~ handleScan ~ result:", result)
+      text = result.data.text;
+    }
+
+    console.log(text,'kjagdkja')
+
+    // Extract data points using regex or other parsing methods
+    const totalAmount = text.match(/Total Amount: (\d+\.\d+)/)?.[1] || 'N/A';
+    const dateTime = text.match(/Date: (.*)/)?.[1] || 'N/A';
+    const fuelQuantity = text.match(/Quantity: (\d+\.\d+)/)?.[1] || 'N/A';
+
+    setData({ totalAmount, dateTime, fuelQuantity });
+
+    // Store data on Ethereum
+    // await storeDataOnBlockchain(totalAmount, dateTime, fuelQuantity);
+  };
+
+  const extractTextFromPDF = async (file) => {
+    const arrayBuffer = await file.arrayBuffer();
+    const pdfDoc = await PDFDocument.load(arrayBuffer);
+    const numPages = pdfDoc.getPageCount();
+    let text = ''; // Initialize text variable for the PDF extraction
+
+    for (let i = 0; i < numPages; i++) {
+      const page = pdfDoc.getPage(i);
+      const { width, height } = page.getSize();
+
+      // Create a canvas to render the PDF page
+      const canvas = document.createElement('canvas');
+      canvas.width = width;
+      canvas.height = height;
+      const context = canvas.getContext('2d');
+
+      // Placeholder: Render the page visually if needed.
+      // For actual rendering, consider using a library like PDF.js.
+      // You would draw the PDF content onto the canvas here.
+
+      // Capture the image from canvas
+      const imageDataUrl = canvas.toDataURL();
+      
+      // Perform OCR on the image
+      const result = await Tesseract.recognize(imageDataUrl, 'eng');
+      text += result.data.text + ' '; // Append extracted text
+    }
+
+    return text;
+  };
+
+  const storeDataOnBlockchain = async (totalAmount, dateTime, fuelQuantity) => {
+    if (typeof window !== "undefined") {
+      const provider = new ethers.providers.Web3Provider(window.ethereum);
+      const signer = provider.getSigner();
+      const contract = new ethers.Contract(
+        contractAddress,
+        ReceiptContract.abi,
+        signer
+      );
+
+      const tx = await contract.storeReceipt(
+        totalAmount,
+        dateTime,
+        fuelQuantity
+      );
+      await tx.wait();
+      alert("Data stored on the blockchain!");
+    }
+  };
+
+  return (
+    <div>
+      <h1>Gas Receipt Scanner</h1>
+      <input
+        type="file"
+        accept="image/*,application/pdf"
+        onChange={handleFileChange}
+      />
+      <button onClick={handleScan}>Scan Receipt</button>
+      {data && (
+        <div>
+          <h2>Extracted Data</h2>
+          <p>Total Amount: {data.totalAmount}</p>
+          <p>Date & Time: {data.dateTime}</p>
+          <p>Fuel Quantity: {data.fuelQuantity}</p>
         </div>
-      </main>
-      <footer className="row-start-3 flex gap-6 flex-wrap items-center justify-center">
-        <a
-          className="flex items-center gap-2 hover:underline hover:underline-offset-4"
-          href="https://nextjs.org/learn?utm_source=create-next-app&utm_medium=default-template-tw&utm_campaign=create-next-app"
-          target="_blank"
-          rel="noopener noreferrer"
-        >
-          <Image
-            aria-hidden
-            src="https://nextjs.org/icons/file.svg"
-            alt="File icon"
-            width={16}
-            height={16}
-          />
-          Learn
-        </a>
-        <a
-          className="flex items-center gap-2 hover:underline hover:underline-offset-4"
-          href="https://vercel.com/templates?framework=next.js&utm_source=create-next-app&utm_medium=default-template-tw&utm_campaign=create-next-app"
-          target="_blank"
-          rel="noopener noreferrer"
-        >
-          <Image
-            aria-hidden
-            src="https://nextjs.org/icons/window.svg"
-            alt="Window icon"
-            width={16}
-            height={16}
-          />
-          Examples
-        </a>
-        <a
-          className="flex items-center gap-2 hover:underline hover:underline-offset-4"
-          href="https://nextjs.org?utm_source=create-next-app&utm_medium=default-template-tw&utm_campaign=create-next-app"
-          target="_blank"
-          rel="noopener noreferrer"
-        >
-          <Image
-            aria-hidden
-            src="https://nextjs.org/icons/globe.svg"
-            alt="Globe icon"
-            width={16}
-            height={16}
-          />
-          Go to nextjs.org →
-        </a>
-      </footer>
+      )}
     </div>
   );
 }
